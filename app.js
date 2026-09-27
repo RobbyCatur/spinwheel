@@ -144,35 +144,38 @@ function init() {
 
       if (labels.length === 0) return;
       const maxLen = Math.max(...labels.map(l => l.length), 1);
-      const fontSize = Math.max(14, Math.min(44, (sector * R * 0.55) / maxLen * 1.6));
+      const fontSize = Math.max(14, Math.min(40, sector * R * 0.62, (R * 0.78) / maxLen * 1.75));
       ctx.fillStyle = "#fff";
-      ctx.textAlign = "center";
+      ctx.textAlign = "right";
       ctx.textBaseline = "middle";
       ctx.font = "700 " + fontSize + "px 'Segoe UI', sans-serif";
       for (let i = 0; i < labels.length; i++) {
         const mid = rotation + (i + 0.5) * sector;
-        const norm = ((mid % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-        const flip = norm > 0 && norm < Math.PI;
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(mid);
-        ctx.translate(R * 0.62, 0);
-        ctx.rotate(Math.PI / 2);
-        if (flip) ctx.rotate(Math.PI);
-        const words = labels[i].split(" ");
-        if (words.length > 1 && labels[i].length > 9) {
-          ctx.fillText(words[0], 0, -fontSize * 0.55);
-          ctx.fillText(words.slice(1).join(" "), 0, fontSize * 0.6);
-        } else {
-          ctx.fillText(labels[i], 0, 0);
-        }
+        ctx.fillText(labels[i], R * 0.9, 0);
         ctx.restore();
       }
     }
 
+    const IDLE_SPEED = 0.22; // rad/detik, rotasi pelan tanpa batas
+    let busy = false;
+    let lastT = performance.now();
+    function idleFrame(now) {
+      if (!busy) {
+        rotation += IDLE_SPEED * Math.min(now - lastT, 100) / 1000;
+        draw();
+      }
+      lastT = now;
+      requestAnimationFrame(idleFrame);
+    }
+    requestAnimationFrame(idleFrame);
+
     return {
       setLabels(next) { labels = next; draw(); },
       spinTo(winnerIndex, turns, onDone) {
+        busy = true;
         const n = labels.length;
         const sector = (Math.PI * 2) / n;
         const pointer = -Math.PI / 2;
@@ -191,7 +194,7 @@ function init() {
           rotation = start + total * eased;
           draw();
           if (t < 1) requestAnimationFrame(frame);
-          else onDone();
+          else { busy = false; onDone(); }
         }
         requestAnimationFrame(frame);
       },
