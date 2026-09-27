@@ -46,10 +46,17 @@ const server = http.createServer((req, res) => {
   await page.locator(".switch-row").nth(0).click();
   await page.click("#saveSettingsBtn");
   await page.click("#spinKelompok");
-  await page.waitForFunction(() => document.getElementById("stAktif").textContent !== "—", null, { timeout: 20000 });
+  await page.waitForSelector("#resultPopup:not([hidden])", { timeout: 20000 });
+  check(await page.locator("#resultPopup").isVisible(), "hasil muncul sebagai popup");
+  check(await page.evaluate(() => getComputedStyle(document.getElementById("resultPopup")).backdropFilter.includes("blur")), "latar popup di-blur");
+  await page.screenshot({ path: ".verify/shot-result-popup.png" });
+  await page.click("#resultCloseBtn");
+  check(await page.evaluate(() => document.getElementById("resultPopup").hidden), "popup tertutup tombol Lanjut");
   await page.click("#spinJatah");
   await page.waitForFunction(() => document.querySelectorAll("#historyBody tr:not(.empty-row)").length === 1, null, { timeout: 20000 });
+  await page.keyboard.press("Escape");
   check((await page.locator("#stSisa").textContent()) === "12/12", "roda1 OFF: sisa tetap 12/12 setelah menang");
+  await page.keyboard.press("Escape");
   check((await page.locator("#hint2").textContent()).includes("Sisa jatah: 3/4"), "roda2 ON default: hint 'Sisa jatah: 3/4'");
 
   // 4. Toggle Roda 1 ON lagi → terhapus seperti biasa
@@ -57,10 +64,12 @@ const server = http.createServer((req, res) => {
   await page.locator(".switch-row").nth(0).click();
   await page.click("#saveSettingsBtn");
   await page.click("#spinKelompok");
-  await page.waitForFunction(() => document.getElementById("stAktif").textContent !== "—", null, { timeout: 20000 });
+  await page.waitForSelector("#resultPopup:not([hidden])", { timeout: 20000 });
+  await page.keyboard.press("Escape");
   check((await page.locator("#stSisa").textContent()) === "11/12", "roda1 ON: sisa berkurang jadi 11/12");
   await page.click("#spinJatah");
   await page.waitForFunction(() => document.querySelectorAll("#historyBody tr:not(.empty-row)").length === 2, null, { timeout: 20000 });
+  await page.keyboard.press("Escape");
   check((await page.locator("#hint2").textContent()).includes("Sisa jatah: 2/4"), "pool jatah menyusut: 'Sisa jatah: 2/4'");
 
   // 5. Roda 2 OFF → label selalu 4, tidak menyusut
@@ -68,9 +77,11 @@ const server = http.createServer((req, res) => {
   await page.locator(".switch-row").nth(1).click();
   await page.click("#saveSettingsBtn");
   await page.click("#spinKelompok");
-  await page.waitForFunction(() => document.getElementById("stAktif").textContent !== "—", null, { timeout: 20000 });
+  await page.waitForSelector("#resultPopup:not([hidden])", { timeout: 20000 });
+  await page.keyboard.press("Escape");
   await page.click("#spinJatah");
   await page.waitForFunction(() => document.querySelectorAll("#historyBody tr:not(.empty-row)").length === 3, null, { timeout: 20000 });
+  await page.keyboard.press("Escape");
   check(!(await page.locator("#hint2").textContent()).includes("Sisa jatah"), "roda2 OFF: tidak ada catatan sisa jatah");
 
   // 6. Migrasi config legacy v1 (array string, weights by nama)

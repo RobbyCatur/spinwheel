@@ -136,6 +136,8 @@ function init() {
   const hint2 = document.getElementById("hint2");
   const resultBanner = document.getElementById("resultBanner");
   const resultText = document.getElementById("resultText");
+  const resultPopup = document.getElementById("resultPopup");
+  const resultPopupText = document.getElementById("resultPopupText");
 
   function makeWheel(canvas, palette) {
     const SIZE = 800;
@@ -303,6 +305,24 @@ function init() {
     return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  function showResultPopup(text) {
+    resultPopupText.textContent = text;
+    resultPopup.hidden = false;
+  }
+
+  function closeResultPopup() {
+    if (resultPopup.hidden) return;
+    resultPopup.hidden = true;
+    refreshUI();
+    if (state.activeGroupId === null && state.remainingGroups.length > 0 && !state.spinning) {
+      resultBanner.hidden = true;
+    }
+  }
+
+  resultPopup.addEventListener("click", e => { if (e.target === resultPopup) closeResultPopup(); });
+  document.getElementById("resultCloseBtn").addEventListener("click", closeResultPopup);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeResultPopup(); });
+
   spinKelompok.addEventListener("click", () => {
     if (state.spinning || state.remainingGroups.length === 0 || state.activeGroupId !== null) return;
     state.spinning = true;
@@ -315,9 +335,8 @@ function init() {
       state.spinning = false;
       setLabelsForWheel1();
       setLabelsForWheel2();
-      resultBanner.hidden = false;
-      resultText.textContent = groupName(state.activeGroupId) + " terpilih!";
       refreshUI();
+      showResultPopup(groupName(state.activeGroupId) + " terpilih!");
     });
   });
 
@@ -344,17 +363,9 @@ function init() {
       state.activeGroupId = null;
       state.spinning = false;
       setLabelsForWheel2();
-      resultBanner.hidden = false;
-      resultText.textContent = state.history[state.history.length - 1].group + " dapat: " + jatahName(winnerId);
-      launchConfetti();
-      if (state.remainingGroups.length === 0) {
-        setTimeout(() => {
-          if (!state.spinning && state.remainingGroups.length === 0 && !state.activeGroupId) {
-            resultText.textContent = "Semua kelompok sudah kebagian jatah!";
-          }
-        }, 2600);
-      }
       refreshUI();
+      showResultPopup(state.history[state.history.length - 1].group + " dapat: " + jatahName(winnerId));
+      launchConfetti();
     });
   });
 
@@ -362,6 +373,7 @@ function init() {
     if (!confirm("Yakin mau mulai dari awal? Riwayat sesi ini terhapus, daftar dan peluang tetap tersimpan.")) return;
     resetSession();
     resultBanner.hidden = true;
+    resultPopup.hidden = true;
     setLabelsForWheel1();
     setLabelsForWheel2();
     refreshUI();
