@@ -1,7 +1,7 @@
-{
+﻿{
   "name": "roda-jatah",
   "version": "1.0.0",
-  "description": "Spin wheel pembagian jatah kelompok — siap deploy, tanpa dependency.",
+  "description": "Spin wheel pembagian jatah kelompok - siap deploy, tanpa dependency.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

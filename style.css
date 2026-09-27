@@ -283,6 +283,45 @@ main { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
 .modal-section h3 { font-size: .95rem; color: var(--teal-dark); margin-bottom: 10px; }
 .modal-note { font-size: .8rem; color: var(--muted); margin-bottom: 10px; }
 
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  background: #fff;
+}
+.switch-row:hover { border-color: var(--teal); }
+.switch-text { display: flex; flex-direction: column; gap: 2px; }
+.switch-text b { font-size: .9rem; color: var(--ink); }
+.switch-text small { font-size: .75rem; color: var(--muted); font-weight: 400; }
+.switch-row input { position: absolute; opacity: 0; pointer-events: none; }
+.switch {
+  flex-shrink: 0;
+  width: 46px; height: 26px;
+  border-radius: 999px;
+  background: #d8cbb4;
+  position: relative;
+  transition: background .2s;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(51, 38, 26, .35);
+  transition: left .2s;
+}
+.switch-row input:checked + .switch { background: var(--teal); }
+.switch-row input:checked + .switch::after { left: 23px; }
+.switch-row input:focus-visible + .switch { outline: 2px solid var(--coral); outline-offset: 2px; }
+
 .list-editor { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 .list-row { display: flex; gap: 8px; align-items: center; }
 .list-row input[type="text"] {

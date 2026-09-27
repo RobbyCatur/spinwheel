@@ -1,55 +1,81 @@
-"use strict";
+﻿"use strict";
 
 const DEFAULT_JATAH = ["Makan roti", "Minum susu", "Lari", "Push Up"];
 const DEFAULT_GROUPS = Array.from({ length: 11 }, (_, i) => "Kelompok " + (i + 1));
 
-function buildDefaultConfig() {
-  const weights = {};
-  DEFAULT_GROUPS.forEach(g => { weights[g] = [1, 1, 1, 1]; });
-  weights["Kelompok 10"] = [1, 1, 0, 1];
-  weights["Kelompok 11"] = [1, 1, 1, 0];
-  return { groups: DEFAULT_GROUPS.slice(), jatah: DEFAULT_JATAH.slice(), weights };
+function uid(prefix, taken) {
+  let n = 1;
+  while (taken.has(prefix + n)) n++;
+  return prefix + n;
 }
 
-function uniqueStrings(list) {
-  const seen = new Set();
-  const out = [];
-  for (const item of list) {
-    const s = String(item).trim();
-    if (!s || seen.has(s)) continue;
-    seen.add(s);
-    out.push(s);
-  }
-  return out;
+function buildDefaultConfig() {
+  const groups = DEFAULT_GROUPS.map((name, i) => ({ id: "g" + (i + 1), name }));
+  const jatah = DEFAULT_JATAH.map((name, i) => ({ id: "j" + (i + 1), name }));
+  const weights = {};
+  groups.forEach(g => { weights[g.id] = [1, 1, 1, 1]; });
+  weights["g10"] = [1, 1, 0, 1];
+  weights["g11"] = [1, 1, 1, 0];
+  return { groups, jatah, weights, autoDelete: { wheel1: true, wheel2: true } };
 }
 
 function normalizeConfig(raw) {
   if (!raw || typeof raw !== "object") return buildDefaultConfig();
-  const jatah = uniqueStrings(Array.isArray(raw.jatah) ? raw.jatah : []);
-  const groups = uniqueStrings(Array.isArray(raw.groups) ? raw.groups : []);
-  if (jatah.length === 0 || groups.length === 0) return buildDefaultConfig();
+
+  const cleanItems = (list, prefix, fallbackName) => {
+    const out = [];
+    const taken = new Set();
+    (Array.isArray(list) ? list : []).forEach(item => {
+      let id = null, name = "";
+      if (typeof item === "string") { name = item.trim(); }
+      else if (item && typeof item === "object") {
+        name = String(item.name == null ? "" : item.name).trim();
+        id = item.id != null ? String(item.id) : null;
+      }
+      if (!name) name = fallbackName + (out.length + 1);
+      if (!id || out.some(x => x.id === id)) id = uid(prefix, taken);
+      taken.add(id);
+      out.push({ id, name });
+    });
+    return out;
+  };
+
+  const groups = cleanItems(raw.groups, "g", "Kelompok ");
+  const jatah = cleanItems(raw.jatah, "j", "Jatah ");
+  if (groups.length === 0 || jatah.length === 0) return buildDefaultConfig();
+
   const rawWeights = raw.weights && typeof raw.weights === "object" ? raw.weights : {};
   const weights = {};
   for (const g of groups) {
-    let row = Array.isArray(rawWeights[g])
-      ? rawWeights[g].map(v => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0; })
+    let row = rawWeights[g.id];
+    if (!Array.isArray(row) && rawWeights[g.name] !== undefined) row = rawWeights[g.name];
+    row = Array.isArray(row)
+      ? row.map(v => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0; })
       : [];
     while (row.length < jatah.length) row.push(1);
     row = row.slice(0, jatah.length);
     if (row.every(v => v === 0)) row = jatah.map(() => 1);
-    weights[g] = row;
+    weights[g.id] = row;
   }
-  return { groups, jatah, weights };
+
+  const ad = raw.autoDelete && typeof raw.autoDelete === "object" ? raw.autoDelete : {};
+  return {
+    groups, jatah, weights,
+    autoDelete: {
+      wheel1: ad.wheel1 !== false,
+      wheel2: ad.wheel2 !== false,
+    },
+  };
 }
 
-function weightsFor(config, groupName) {
-  return config.weights[groupName] || config.jatah.map(() => 1);
+function weightsFor(config, groupId) {
+  return config.weights[groupId] || config.jatah.map(() => 1);
 }
 
 function weightedPick(weights, rng) {
   const random = rng || Math.random;
   const total = weights.reduce((a, b) => a + b, 0);
-  if (total <= 0) throw new Error("Semua weight nol — tidak ada hasil yang mungkin.");
+  if (total <= 0) throw new Error("Semua weight nol. Tidak ada hasil yang mungkin.");
   let r = random() * total;
   for (let i = 0; i < weights.length; i++) {
     r -= weights[i];
@@ -67,21 +93,24 @@ if (typeof document !== "undefined") {
 }
 
 function init() {
-  const STORAGE_KEY = "spinwheel.config.v1";
+  const STORAGE_KEY = "spinwheel.config.v2";
+  const LEGACY_KEY = "spinwheel.config.v1";
   const COLORS1 = ["#0e8b7a", "#17a88f", "#0a6e60", "#2a9d8f", "#12b0a0", "#3cb8a0"];
   const COLORS2 = ["#e4572e", "#f4a52a", "#d1495b", "#e76f51", "#c23f17", "#f9a03f"];
 
   let config = loadConfig();
   const state = {
-    remaining: config.groups.slice(),
-    activeGroup: null,
+    remainingGroups: config.groups.map(g => g.id),
+    remainingJatah: config.jatah.map(j => j.id),
+    activeGroupId: null,
     history: [],
     spinning: false,
   };
 
   function loadConfig() {
     try {
-      return normalizeConfig(JSON.parse(localStorage.getItem(STORAGE_KEY)));
+      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY);
+      return normalizeConfig(JSON.parse(raw));
     } catch (e) {
       return buildDefaultConfig();
     }
@@ -90,6 +119,11 @@ function init() {
   function persistConfig() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
   }
+
+  const groupById = id => config.groups.find(g => g.id === id) || null;
+  const jatahById = id => config.jatah.find(j => j.id === id) || null;
+  const groupName = id => (groupById(id) || { name: "?" }).name;
+  const jatahName = id => (jatahById(id) || { name: "?" }).name;
 
   const wheels = {
     wheel1: makeWheel(document.getElementById("wheel1"), COLORS1),
@@ -201,41 +235,58 @@ function init() {
     };
   }
 
+  function visibleJatahIds() {
+    return config.autoDelete.wheel2 ? state.remainingJatah.slice() : config.jatah.map(j => j.id);
+  }
+
   function setLabelsForWheel1() {
-    wheels.wheel1.setLabels(state.remaining);
+    wheels.wheel1.setLabels(state.remainingGroups.map(groupName));
+  }
+
+  function setLabelsForWheel2() {
+    wheels.wheel2.setLabels(visibleJatahIds().map(jatahName));
+  }
+
+  function resetSession() {
+    state.remainingGroups = config.groups.map(g => g.id);
+    state.remainingJatah = config.jatah.map(j => j.id);
+    state.activeGroupId = null;
+    state.history = [];
+    state.spinning = false;
   }
 
   function refreshUI() {
-    document.getElementById("stSisa").textContent = state.remaining.length + "/" + config.groups.length;
+    document.getElementById("stSisa").textContent = state.remainingGroups.length + "/" + config.groups.length;
     document.getElementById("stSelesai").textContent = String(state.history.length);
-    document.getElementById("stAktif").textContent = state.activeGroup || "—";
-    document.getElementById("stJatah").textContent = state.history.length ? state.history[state.history.length - 1].jatah : "—";
+    document.getElementById("stAktif").textContent = state.activeGroupId ? groupName(state.activeGroupId) : "-";
+    document.getElementById("stJatah").textContent = state.history.length ? state.history[state.history.length - 1].jatah : "-";
 
-    spinKelompok.disabled = state.spinning || state.remaining.length === 0 || state.activeGroup !== null;
-    spinJatah.disabled = state.spinning || state.activeGroup === null;
-
-    const finished = state.remaining.length === 0 && !state.activeGroup;
-    const phase = finished ? "done" : state.activeGroup ? "jatah" : "kelompok";
+    const finished = state.remainingGroups.length === 0 && !state.activeGroupId;
+    const phase = finished ? "done" : state.activeGroupId ? "jatah" : "kelompok";
     document.getElementById("step1").className = "step" + (phase === "kelompok" ? " is-current" : " is-done");
     document.getElementById("step2").className = "step" + (phase === "jatah" ? " is-current" : finished ? " is-done" : "");
     document.getElementById("step3").className = "step" + (finished ? " is-current" : "");
     document.getElementById("card1").classList.toggle("is-live", phase === "kelompok" && !state.spinning);
     document.getElementById("card2").classList.toggle("is-live", phase === "jatah" && !state.spinning);
 
+    spinKelompok.disabled = state.spinning || state.remainingGroups.length === 0 || state.activeGroupId !== null;
+    spinJatah.disabled = state.spinning || state.activeGroupId === null || visibleJatahIds().length === 0;
+
+    const jatahLeftNote = config.autoDelete.wheel2 ? " Sisa jatah: " + state.remainingJatah.length + "/" + config.jatah.length + "." : "";
     if (finished) {
-      hint1.textContent = "Semua kelompok sudah kebagian. Keren!";
+      hint1.textContent = "Semua kelompok sudah kebagian.";
       hint2.textContent = "Mau sesi lagi? Tekan MULAI DARI AWAL.";
       resultBanner.hidden = false;
-      resultText.textContent = "🎉 Semua kelompok sudah kebagian jatah!";
+      resultText.textContent = "Semua kelompok sudah kebagian jatah!";
     } else if (state.spinning) {
-      hint1.textContent = "Rodanya masih berputar…";
-      hint2.textContent = "Rodanya masih berputar…";
-    } else if (state.activeGroup === null) {
-      hint1.textContent = "Tekan tombolnya, biar roda yang bicara.";
-      hint2.textContent = "Tunggu Roda 1 menentukan kelompok.";
+      hint1.textContent = "Rodanya masih berputar...";
+      hint2.textContent = "Rodanya masih berputar...";
+    } else if (state.activeGroupId === null) {
+      hint1.textContent = "Tekan tombolnya. Roda putar, hasilnya jujur.";
+      hint2.textContent = "Tunggu Roda 1 menentukan kelompok." + jatahLeftNote;
     } else {
-      hint1.textContent = "Sudah terpilih — sekarang giliran Roda 2.";
-      hint2.textContent = state.activeGroup + " siap. Mau dapat apa hari ini?";
+      hint1.textContent = "Sudah terpilih. Sekarang giliran Roda 2.";
+      hint2.textContent = groupName(state.activeGroupId) + " siap. Mau dapat apa hari ini?" + jatahLeftNote;
     }
 
     const body = document.getElementById("historyBody");
@@ -253,39 +304,53 @@ function init() {
   }
 
   spinKelompok.addEventListener("click", () => {
-    if (state.spinning || state.remaining.length === 0 || state.activeGroup !== null) return;
+    if (state.spinning || state.remainingGroups.length === 0 || state.activeGroupId !== null) return;
     state.spinning = true;
     resultBanner.hidden = true;
     refreshUI();
-    const winnerIdx = weightedPick(state.remaining.map(() => 1));
+    const winnerIdx = weightedPick(state.remainingGroups.map(() => 1));
     wheels.wheel1.spinTo(winnerIdx, 5 + Math.floor(Math.random() * 3), () => {
-      state.activeGroup = state.remaining[winnerIdx];
-      state.remaining.splice(winnerIdx, 1);
+      state.activeGroupId = state.remainingGroups[winnerIdx];
+      if (config.autoDelete.wheel1) state.remainingGroups.splice(winnerIdx, 1);
       state.spinning = false;
       setLabelsForWheel1();
+      setLabelsForWheel2();
       resultBanner.hidden = false;
-      resultText.textContent = state.activeGroup + " terpilih!";
+      resultText.textContent = groupName(state.activeGroupId) + " terpilih!";
       refreshUI();
     });
   });
 
   spinJatah.addEventListener("click", () => {
-    if (state.spinning || state.activeGroup === null) return;
+    if (state.spinning || state.activeGroupId === null) return;
+    const row = weightsFor(config, state.activeGroupId);
+    let pool = visibleJatahIds();
+    let poolWeights = pool.map(id => row[config.jatah.findIndex(j => j.id === id)]);
+    if (poolWeights.reduce((a, b) => a + b, 0) <= 0) {
+      state.remainingJatah = config.jatah.map(j => j.id);
+      pool = visibleJatahIds();
+      poolWeights = pool.map(id => row[config.jatah.findIndex(j => j.id === id)]);
+    }
     state.spinning = true;
     refreshUI();
-    const winnerIdx = weightedPick(weightsFor(config, state.activeGroup));
+    const winnerIdx = weightedPick(poolWeights);
+    const winnerId = pool[winnerIdx];
     wheels.wheel2.spinTo(winnerIdx, 6 + Math.floor(Math.random() * 3), () => {
-      const jatahName = config.jatah[winnerIdx];
-      state.history.push({ group: state.activeGroup, jatah: jatahName });
-      state.activeGroup = null;
+      if (config.autoDelete.wheel2) {
+        const at = state.remainingJatah.indexOf(winnerId);
+        if (at >= 0) state.remainingJatah.splice(at, 1);
+      }
+      state.history.push({ group: groupName(state.activeGroupId), jatah: jatahName(winnerId) });
+      state.activeGroupId = null;
       state.spinning = false;
+      setLabelsForWheel2();
       resultBanner.hidden = false;
-      resultText.textContent = state.history[state.history.length - 1].group + " dapat: " + jatahName;
+      resultText.textContent = state.history[state.history.length - 1].group + " dapat: " + jatahName(winnerId);
       launchConfetti();
-      if (state.remaining.length === 0) {
+      if (state.remainingGroups.length === 0) {
         setTimeout(() => {
-          if (!state.spinning && state.remaining.length === 0 && !state.activeGroup) {
-            resultText.textContent = "🎉 Semua kelompok sudah kebagian jatah!";
+          if (!state.spinning && state.remainingGroups.length === 0 && !state.activeGroupId) {
+            resultText.textContent = "Semua kelompok sudah kebagian jatah!";
           }
         }, 2600);
       }
@@ -294,13 +359,11 @@ function init() {
   });
 
   document.getElementById("resetBtn").addEventListener("click", () => {
-    if (!confirm("Yakin mau mulai dari awal? Riwayat sesi ini terhapus — daftar dan peluang tetap tersimpan.")) return;
-    state.remaining = config.groups.slice();
-    state.activeGroup = null;
-    state.history = [];
-    state.spinning = false;
+    if (!confirm("Yakin mau mulai dari awal? Riwayat sesi ini terhapus, daftar dan peluang tetap tersimpan.")) return;
+    resetSession();
     resultBanner.hidden = true;
     setLabelsForWheel1();
+    setLabelsForWheel2();
     refreshUI();
   });
 
@@ -310,6 +373,8 @@ function init() {
   const groupRowsEl = document.getElementById("groupRows");
   const jatahRowsEl = document.getElementById("jatahRows");
   const matrixEl = document.getElementById("matrixTable");
+  const ad1El = document.getElementById("autoDelete1");
+  const ad2El = document.getElementById("autoDelete2");
   let draft = null;
 
   document.getElementById("settingsBtn").addEventListener("click", () => {
@@ -323,9 +388,10 @@ function init() {
 
   function openDraft() {
     draft = {
-      groups: config.groups.map(g => ({ old: g, name: g })),
-      jatah: config.jatah.map(j => ({ old: j, name: j })),
-      weights: config.groups.map(g => weightsFor(config, g).slice()),
+      groups: config.groups.map(g => ({ id: g.id, name: g.name })),
+      jatah: config.jatah.map(j => ({ id: j.id, name: j.name })),
+      weights: config.groups.map(g => weightsFor(config, g.id).slice()),
+      autoDelete: { wheel1: config.autoDelete.wheel1, wheel2: config.autoDelete.wheel2 },
     };
   }
 
@@ -341,7 +407,7 @@ function init() {
       input.addEventListener("input", () => { row.name = input.value; renderMatrixNames(); });
       const del = document.createElement("button");
       del.className = "row-remove";
-      del.textContent = "×";
+      del.textContent = "x";
       del.title = "Hapus";
       del.addEventListener("click", () => {
         draft.groups.splice(i, 1);
@@ -363,7 +429,7 @@ function init() {
       input.addEventListener("input", () => { row.name = input.value; renderMatrixHeaders(); });
       const del = document.createElement("button");
       del.className = "row-remove";
-      del.textContent = "×";
+      del.textContent = "x";
       del.title = "Hapus";
       del.addEventListener("click", () => {
         draft.jatah.splice(i, 1);
@@ -374,32 +440,36 @@ function init() {
       jatahRowsEl.appendChild(div);
     });
 
+    ad1El.checked = draft.autoDelete.wheel1;
+    ad2El.checked = draft.autoDelete.wheel2;
     renderMatrix();
   }
 
+  ad1El.addEventListener("change", () => { draft.autoDelete.wheel1 = ad1El.checked; });
+  ad2El.addEventListener("change", () => { draft.autoDelete.wheel2 = ad2El.checked; });
+
   document.getElementById("addGroupBtn").addEventListener("click", () => {
-    let n = draft.groups.length + 1;
-    let name = "Kelompok " + n;
-    while (draft.groups.some(g => g.name === name)) name = "Kelompok " + (++n);
-    draft.groups.push({ old: null, name });
+    const taken = new Set(draft.groups.map(g => g.id));
+    draft.groups.push({ id: uid("g", taken), name: "Kelompok " + (draft.groups.length + 1) });
     draft.weights.push(draft.jatah.map(() => 1));
     renderSettings();
   });
 
   document.getElementById("addJatahBtn").addEventListener("click", () => {
-    draft.jatah.push({ old: null, name: "Jatah baru" });
+    const taken = new Set(draft.jatah.map(j => j.id));
+    draft.jatah.push({ id: uid("j", taken), name: "Jatah baru" });
     draft.weights.forEach(w => w.push(1));
     renderSettings();
   });
 
   function renderMatrixHeaders() {
     const ths = matrixEl.querySelectorAll("thead th[data-col]");
-    ths.forEach(th => { th.textContent = draft.jatah[Number(th.dataset.col)].name || "—"; });
+    ths.forEach(th => { th.textContent = draft.jatah[Number(th.dataset.col)].name || "-"; });
   }
 
   function renderMatrixNames() {
     const cells = matrixEl.querySelectorAll("tbody td.row-name");
-    cells.forEach((td, i) => { if (draft.groups[i]) td.textContent = draft.groups[i].name || "—"; });
+    cells.forEach((td, i) => { if (draft.groups[i]) td.textContent = draft.groups[i].name || "-"; });
   }
 
   function renderMatrix() {
@@ -412,7 +482,7 @@ function init() {
     draft.jatah.forEach((j, ci) => {
       const th = document.createElement("th");
       th.dataset.col = ci;
-      th.textContent = j.name || "—";
+      th.textContent = j.name || "-";
       headRow.appendChild(th);
     });
     const totalTh = document.createElement("th");
@@ -426,7 +496,7 @@ function init() {
       const tr = document.createElement("tr");
       const nameTd = document.createElement("td");
       nameTd.className = "row-name";
-      nameTd.textContent = g.name || "—";
+      nameTd.textContent = g.name || "-";
       tr.appendChild(nameTd);
       draft.jatah.forEach((j, ci) => {
         const td = document.createElement("td");
@@ -460,10 +530,10 @@ function init() {
     const tr = matrixEl.querySelectorAll("tbody tr")[ri];
     if (!tr) return;
     tr.querySelectorAll("td .pct").forEach((span, ci) => {
-      span.textContent = sum > 0 ? (row[ci] / sum * 100).toFixed(1).replace(/\.0$/, "") + "%" : "—";
+      span.textContent = sum > 0 ? (row[ci] / sum * 100).toFixed(1).replace(/\.0$/, "") + "%" : "-";
     });
     const totalTd = tr.querySelector(".pct-total");
-    if (totalTd) totalTd.textContent = sum > 0 ? "OK" : "⚠ semua 0";
+    if (totalTd) totalTd.textContent = sum > 0 ? "OK" : "Perhatian: semua 0";
   }
 
   document.getElementById("saveSettingsBtn").addEventListener("click", () => {
@@ -473,42 +543,34 @@ function init() {
     if (jnames.length === 0) return alert("Daftar jatah tidak boleh kosong.");
     if (names.some(n => !n)) return alert("Ada nama kelompok yang kosong.");
     if (jnames.some(n => !n)) return alert("Ada nama jatah yang kosong.");
-    if (new Set(names).size !== names.length) return alert("Nama kelompok harus unik.");
-    if (new Set(jnames).size !== jnames.length) return alert("Nama jatah harus unik.");
     const zeroRows = draft.weights
       .map((row, i) => ({ row, i }))
       .filter(x => x.row.reduce((a, b) => a + b, 0) <= 0)
       .map(x => names[x.i]);
-    if (zeroRows.length > 0) return alert("Probabilitas tidak valid untuk: " + zeroRows.join(", ") + " — minimal satu weight harus > 0.");
+    if (zeroRows.length > 0) return alert("Peluang tidak valid untuk: " + zeroRows.join(", ") + ". Minimal satu weight harus > 0.");
 
-    const renameG = {};
-    const deletedG = new Set(config.groups);
-    draft.groups.forEach((g, i) => {
-      if (g.old !== null) {
-        deletedG.delete(g.old);
-        if (g.old !== names[i]) renameG[g.old] = names[i];
-      }
-    });
-    const renameJ = {};
-    draft.jatah.forEach(j => { if (j.old !== null && j.old !== j.name.trim()) renameJ[j.old] = j.name.trim(); });
-
+    const newGroups = draft.groups.map((g, i) => ({ id: g.id, name: names[i] }));
+    const newJatah = draft.jatah.map((j, i) => ({ id: j.id, name: jnames[i] }));
+    const prevG = new Set(config.groups.map(g => g.id));
+    const prevJ = new Set(config.jatah.map(j => j.id));
     const newWeights = {};
-    names.forEach((n, i) => { newWeights[n] = draft.weights[i].slice(); });
-    config = normalizeConfig({ groups: names, jatah: jnames, weights: newWeights });
+    newGroups.forEach((g, i) => { newWeights[g.id] = draft.weights[i].slice(); });
+    config = normalizeConfig({
+      groups: newGroups, jatah: newJatah, weights: newWeights,
+      autoDelete: { wheel1: draft.autoDelete.wheel1, wheel2: draft.autoDelete.wheel2 },
+    });
     persistConfig();
 
-    const mapG = n => renameG[n] || n;
-    const mapJ = n => renameJ[n] || n;
-    state.remaining = state.remaining.filter(n => !deletedG.has(n)).map(mapG);
-    draft.groups.filter(g => g.old === null).forEach(g => {
-      if (!state.remaining.includes(g.name.trim())) state.remaining.push(g.name.trim());
-    });
-    if (state.activeGroup && deletedG.has(state.activeGroup)) state.activeGroup = null;
-    else if (state.activeGroup) state.activeGroup = mapG(state.activeGroup);
-    state.history = state.history.map(h => ({ group: mapG(h.group), jatah: mapJ(h.jatah) }));
+    const validG = new Set(config.groups.map(g => g.id));
+    const validJ = new Set(config.jatah.map(j => j.id));
+    state.remainingGroups = state.remainingGroups.filter(id => validG.has(id));
+    state.remainingJatah = state.remainingJatah.filter(id => validJ.has(id));
+    config.groups.forEach(g => { if (!prevG.has(g.id)) state.remainingGroups.push(g.id); });
+    config.jatah.forEach(j => { if (!prevJ.has(j.id)) state.remainingJatah.push(j.id); });
+    if (state.activeGroupId && !validG.has(state.activeGroupId)) state.activeGroupId = null;
 
     setLabelsForWheel1();
-    wheels.wheel2.setLabels(config.jatah);
+    setLabelsForWheel2();
     refreshUI();
     modal.hidden = true;
   });
@@ -517,19 +579,16 @@ function init() {
     if (!confirm("Kembalikan daftar kelompok, jatah, dan peluang ke bawaan? Riwayat sesi ikut terhapus.")) return;
     config = buildDefaultConfig();
     persistConfig();
-    state.remaining = config.groups.slice();
-    state.activeGroup = null;
-    state.history = [];
-    state.spinning = false;
+    resetSession();
     resultBanner.hidden = true;
     openDraft();
     renderSettings();
     setLabelsForWheel1();
-    wheels.wheel2.setLabels(config.jatah);
+    setLabelsForWheel2();
     refreshUI();
   });
 
-  wheels.wheel2.setLabels(config.jatah);
+  setLabelsForWheel2();
   setLabelsForWheel1();
   refreshUI();
 
@@ -571,3 +630,4 @@ function init() {
     requestAnimationFrame(frame);
   }
 }
+
