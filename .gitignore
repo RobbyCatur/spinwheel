@@ -1,0 +1,4 @@
+.verify/
+.agents/
+node_modules/
+.qoder/settings.local.json
