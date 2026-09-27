@@ -14,8 +14,6 @@ function buildDefaultConfig() {
   const jatah = DEFAULT_JATAH.map((name, i) => ({ id: "j" + (i + 1), name }));
   const weights = {};
   groups.forEach(g => { weights[g.id] = [1, 1, 1, 1]; });
-  weights["g10"] = [1, 1, 0, 1];
-  weights["g11"] = [1, 1, 1, 0];
   return { groups, jatah, weights, autoDelete: { wheel1: true, wheel2: true } };
 }
 
@@ -50,11 +48,10 @@ function normalizeConfig(raw) {
     let row = rawWeights[g.id];
     if (!Array.isArray(row) && rawWeights[g.name] !== undefined) row = rawWeights[g.name];
     row = Array.isArray(row)
-      ? row.map(v => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : 0; })
+      ? row.map(v => { const n = Number(v); return Number.isFinite(n) && n >= 1 ? n : 1; })
       : [];
     while (row.length < jatah.length) row.push(1);
     row = row.slice(0, jatah.length);
-    if (row.every(v => v === 0)) row = jatah.map(() => 1);
     weights[g.id] = row;
   }
 
@@ -343,13 +340,8 @@ function init() {
   spinJatah.addEventListener("click", () => {
     if (state.spinning || state.activeGroupId === null) return;
     const row = weightsFor(config, state.activeGroupId);
-    let pool = visibleJatahIds();
-    let poolWeights = pool.map(id => row[config.jatah.findIndex(j => j.id === id)]);
-    if (poolWeights.reduce((a, b) => a + b, 0) <= 0) {
-      state.remainingJatah = config.jatah.map(j => j.id);
-      pool = visibleJatahIds();
-      poolWeights = pool.map(id => row[config.jatah.findIndex(j => j.id === id)]);
-    }
+    const pool = visibleJatahIds();
+    const poolWeights = pool.map(id => row[config.jatah.findIndex(j => j.id === id)]);
     state.spinning = true;
     refreshUI();
     const winnerIdx = weightedPick(poolWeights);
@@ -514,7 +506,7 @@ function init() {
         const td = document.createElement("td");
         const input = document.createElement("input");
         input.type = "number";
-        input.min = "0";
+        input.min = "1";
         input.step = "any";
         input.value = draft.weights[ri][ci];
         const pct = document.createElement("span");
@@ -555,11 +547,11 @@ function init() {
     if (jnames.length === 0) return alert("Daftar jatah tidak boleh kosong.");
     if (names.some(n => !n)) return alert("Ada nama kelompok yang kosong.");
     if (jnames.some(n => !n)) return alert("Ada nama jatah yang kosong.");
-    const zeroRows = draft.weights
+    const badRows = draft.weights
       .map((row, i) => ({ row, i }))
-      .filter(x => x.row.reduce((a, b) => a + b, 0) <= 0)
+      .filter(x => x.row.some(v => !(Number.isFinite(v) && v >= 1)))
       .map(x => names[x.i]);
-    if (zeroRows.length > 0) return alert("Peluang tidak valid untuk: " + zeroRows.join(", ") + ". Minimal satu weight harus > 0.");
+    if (badRows.length > 0) return alert("Peluang minimal 1 (tidak boleh 0%) untuk: " + badRows.join(", ") + ".");
 
     const newGroups = draft.groups.map((g, i) => ({ id: g.id, name: names[i] }));
     const newJatah = draft.jatah.map((j, i) => ({ id: j.id, name: jnames[i] }));

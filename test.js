@@ -9,8 +9,9 @@ function assert(cond, msg) {
 const cfg = buildDefaultConfig();
 assert(cfg.groups.length === 11 && cfg.jatah.length === 4, "default: 11 kelompok, 4 jatah");
 assert(cfg.groups[0].id === "g1" && cfg.groups[0].name === "Kelompok 1", "grup punya id & name");
-assert(weightsFor(cfg, "g10").join() === "1,1,0,1", "default g10: Lari weight 0");
-assert(weightsFor(cfg, "g11").join() === "1,1,1,0", "default g11: Push Up weight 0");
+assert(weightsFor(cfg, "g10").join() === "1,1,1,1", "default g10: semua weight 1");
+assert(weightsFor(cfg, "g11").join() === "1,1,1,1", "default g11: semua weight 1");
+assert(cfg.groups.every(g => weightsFor(cfg, g.id).every(v => v >= 1)), "tidak ada weight 0 di default");
 assert(cfg.autoDelete.wheel1 === true && cfg.autoDelete.wheel2 === true, "autoDelete default ON dua-duanya");
 
 // Migrasi config lama (array of strings, weights by name)
@@ -22,7 +23,7 @@ assert(cfg.autoDelete.wheel1 === true && cfg.autoDelete.wheel2 === true, "autoDe
   };
   const n = normalizeConfig(legacy);
   assert(n.groups[0].id === "g1" && n.groups[1].id === "g2", "legacy: id dibuat berurutan");
-  assert(weightsFor(n, "g2").join() === "0,5", "legacy: weights by nama terpetakan ke id");
+  assert(weightsFor(n, "g2").join() === "1,5", "legacy: weight 0 dinaikkan ke minimum 1");
   assert(weightsFor(n, "g1").join() === "1,1", "legacy: tanpa weights → default 1");
 }
 
@@ -61,15 +62,13 @@ assert(normalizeConfig(null).groups.length === 11, "null → default");
   const n = normalizeConfig({ groups: ["A"], jatah: ["X", "Y", "Z"], weights: { A: [1] } });
   assert(weightsFor(n, "g1").join() === "1,1,1", "row pendek di-pad dengan 1");
   const n2 = normalizeConfig({ groups: ["A"], jatah: ["X", "Y"], weights: { g1: [5, -3, 9] } });
-  assert(weightsFor(n2, "g1").join() === "5,0", "negatif → 0, kolom berlebih dibuang");
+  assert(weightsFor(n2, "g1").join() === "5,1", "negatif → minimum 1, kolom berlebih dibuang");
   const n3 = normalizeConfig({ groups: ["A"], jatah: ["X", "Y"], weights: { g1: [0, 0] } });
   assert(weightsFor(n3, "g1").join() === "1,1", "row semua nol → dipulihkan ke 1");
 }
 
 // weightedPick
 {
-  for (let i = 0; i < 100000; i++) assert(weightedPick(weightsFor(cfg, "g10")) !== 2, "g10 dapat Lari!");
-  for (let i = 0; i < 100000; i++) assert(weightedPick(weightsFor(cfg, "g11")) !== 3, "g11 dapat Push Up!");
   let threw = false;
   try { weightedPick([0, 0, 0, 0]); } catch (e) { threw = true; }
   assert(threw, "weightedPick([0,0,0,0]) harus error");
@@ -86,20 +85,23 @@ for (let trial = 0; trial < 300; trial++) {
     remaining = remaining.filter(x => x !== gid);
     if (pool.length === 0) pool = c.jatah.map(j => j.id);
     const row = weightsFor(c, gid);
-    const poolIds = pool.slice();
-    let poolWeights = poolIds.map(id => row[c.jatah.findIndex(j => j.id === id)]);
-    if (poolWeights.reduce((a, b) => a + b, 0) <= 0) {
-      pool = c.jatah.map(j => j.id);
-      poolWeights = pool.map(id => row[c.jatah.findIndex(j => j.id === id)]);
-    }
+    const poolWeights = pool.map(id => row[c.jatah.findIndex(j => j.id === id)]);
     const winId = pool[weightedPick(poolWeights)];
     pool = pool.filter(x => x !== winId);
     history.push({ group: gid, jatah: c.jatah.find(j => j.id === winId).name });
   }
   assert(history.length === 11, "sesi selesai 11 entri");
   assert(new Set(history.map(h => h.group)).size === 11, "tanpa duplikat kelompok");
-  assert(history.find(h => h.group === "g10").jatah !== "Lari", "g10 dapat Lari");
-  assert(history.find(h => h.group === "g11").jatah !== "Push Up", "g11 dapat Push Up");
+}
+
+// Semua jatah berpeluang muncul untuk setiap kelompok (tidak ada 0%)
+{
+  const c = buildDefaultConfig();
+  for (const g of c.groups) {
+    const seen = new Set();
+    for (let i = 0; i < 4000; i++) seen.add(weightedPick(weightsFor(c, g.id)));
+    assert(seen.size === c.jatah.length, g.name + ": semua jatah punya peluang > 0");
+  }
 }
 
 // Sesi dengan wheel1 autoDelete OFF: kelompok bisa terpilih berulang, riwayat tetap bertambah
