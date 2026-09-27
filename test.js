@@ -23,7 +23,7 @@ assert(cfg.autoDelete.wheel1 === true && cfg.autoDelete.wheel2 === true, "autoDe
   };
   const n = normalizeConfig(legacy);
   assert(n.groups[0].id === "g1" && n.groups[1].id === "g2", "legacy: id dibuat berurutan");
-  assert(weightsFor(n, "g2").join() === "1,5", "legacy: weight 0 dinaikkan ke minimum 1");
+  assert(weightsFor(n, "g2").join() === "0,5", "legacy: weights by nama terpetakan ke id");
   assert(weightsFor(n, "g1").join() === "1,1", "legacy: tanpa weights → default 1");
 }
 
@@ -62,7 +62,7 @@ assert(normalizeConfig(null).groups.length === 11, "null → default");
   const n = normalizeConfig({ groups: ["A"], jatah: ["X", "Y", "Z"], weights: { A: [1] } });
   assert(weightsFor(n, "g1").join() === "1,1,1", "row pendek di-pad dengan 1");
   const n2 = normalizeConfig({ groups: ["A"], jatah: ["X", "Y"], weights: { g1: [5, -3, 9] } });
-  assert(weightsFor(n2, "g1").join() === "5,1", "negatif → minimum 1, kolom berlebih dibuang");
+  assert(weightsFor(n2, "g1").join() === "5,0", "negatif → 0, kolom berlebih dibuang");
   const n3 = normalizeConfig({ groups: ["A"], jatah: ["X", "Y"], weights: { g1: [0, 0] } });
   assert(weightsFor(n3, "g1").join() === "1,1", "row semua nol → dipulihkan ke 1");
 }
@@ -85,7 +85,11 @@ for (let trial = 0; trial < 300; trial++) {
     remaining = remaining.filter(x => x !== gid);
     if (pool.length === 0) pool = c.jatah.map(j => j.id);
     const row = weightsFor(c, gid);
-    const poolWeights = pool.map(id => row[c.jatah.findIndex(j => j.id === id)]);
+    let poolWeights = pool.map(id => row[c.jatah.findIndex(j => j.id === id)]);
+    if (poolWeights.reduce((a, b) => a + b, 0) <= 0) {
+      pool = c.jatah.map(j => j.id);
+      poolWeights = pool.map(id => row[c.jatah.findIndex(j => j.id === id)]);
+    }
     const winId = pool[weightedPick(poolWeights)];
     pool = pool.filter(x => x !== winId);
     history.push({ group: gid, jatah: c.jatah.find(j => j.id === winId).name });
@@ -94,14 +98,16 @@ for (let trial = 0; trial < 300; trial++) {
   assert(new Set(history.map(h => h.group)).size === 11, "tanpa duplikat kelompok");
 }
 
-// Semua jatah berpeluang muncul untuk setiap kelompok (tidak ada 0%)
+// Default = 1 semua; namun 0 tetap boleh diisi dan tidak akan pernah terpilih
 {
-  const c = buildDefaultConfig();
-  for (const g of c.groups) {
-    const seen = new Set();
-    for (let i = 0; i < 4000; i++) seen.add(weightedPick(weightsFor(c, g.id)));
-    assert(seen.size === c.jatah.length, g.name + ": semua jatah punya peluang > 0");
-  }
+  const c = normalizeConfig({
+    groups: ["Kelompok 1", "Kelompok 10"],
+    jatah: ["Makan roti", "Minum susu", "Lari", "Push Up"],
+    weights: { "Kelompok 10": [1, 1, 0, 1] },
+  });
+  assert(weightsFor(c, "g1").join() === "1,1,1,1", "default kelompok lain tetap 1 semua");
+  assert(weightsFor(c, "g2").join() === "1,1,0,1", "weight 0 diterima dan tersimpan apa adanya");
+  for (let i = 0; i < 100000; i++) assert(weightedPick(weightsFor(c, "g2")) !== 2, "Kelompok 10 dapat Lari!");
 }
 
 // Sesi dengan wheel1 autoDelete OFF: kelompok bisa terpilih berulang, riwayat tetap bertambah
