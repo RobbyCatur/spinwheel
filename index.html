@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roda Jatah — Spin Wheel Kegiatan</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<header class="site-header">
+  <div class="header-inner">
+    <h1>🎡 Roda <span class="hl">Jatah</span></h1>
+    <p class="subtitle">Putar rodanya — siapa dapat apa, biar roda yang jawab.</p>
+  </div>
+  <div class="steps" aria-label="Langkah permainan">
+    <span class="step" id="step1"><b>1</b> Putar kelompok</span>
+    <span class="step-arrow">→</span>
+    <span class="step" id="step2"><b>2</b> Putar jatah</span>
+    <span class="step-arrow">→</span>
+    <span class="step" id="step3"><b>3</b> Semua kebagian</span>
+  </div>
+</header>
+
+<main>
+  <section class="status-bar" id="statusBar">
+    <div class="status-item"><span class="status-label">Sisa kelompok</span><strong id="stSisa">11/11</strong></div>
+    <div class="status-item"><span class="status-label">Sudah kebagian</span><strong id="stSelesai">0</strong></div>
+    <div class="status-item"><span class="status-label">Sedang giliran</span><strong id="stAktif">—</strong></div>
+    <div class="status-item"><span class="status-label">Jatah terakhir</span><strong id="stJatah">—</strong></div>
+  </section>
+
+  <section class="wheels">
+    <div class="wheel-card wheel-card--1" id="card1">
+      <h2>Roda 1 · Kelompok</h2>
+      <div class="canvas-wrap">
+        <canvas id="wheel1"></canvas>
+        <div class="pointer"></div>
+        <div class="hub">SPIN</div>
+      </div>
+      <button id="spinKelompok" class="spin-btn spin-btn--1">SPIN KELOMPOK</button>
+      <p class="hint" id="hint1">Tekan tombolnya, biar roda yang bicara.</p>
+    </div>
+
+    <div class="wheel-card wheel-card--2" id="card2">
+      <h2>Roda 2 · Jatah</h2>
+      <div class="canvas-wrap">
+        <canvas id="wheel2"></canvas>
+        <div class="pointer"></div>
+        <div class="hub">SPIN</div>
+      </div>
+      <button id="spinJatah" class="spin-btn spin-btn--2" disabled>SPIN JATAH</button>
+      <p class="hint" id="hint2">Tunggu Roda 1 menentukan kelompok.</p>
+    </div>
+  </section>
+
+  <section class="result-banner" id="resultBanner" hidden>
+    <span id="resultText"></span>
+  </section>
+
+  <section class="history-panel">
+    <h2>Riwayat putaran</h2>
+    <table>
+      <thead>
+        <tr><th>No</th><th>Kelompok</th><th>Jatah</th></tr>
+      </thead>
+      <tbody id="historyBody">
+        <tr class="empty-row"><td colspan="3">Belum ada yang diputar. Mulai dari Roda 1!</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="actions">
+    <button id="settingsBtn" class="settings-btn">⚙️ Atur Daftar &amp; Peluang</button>
+    <button id="resetBtn" class="reset-btn">MULAI DARI AWAL</button>
+  </section>
+</main>
+
+<footer class="site-footer">Semua kelompok dapat satu jatah — tidak ada yang lolos, tidak ada yang diulang.</footer>
+
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h2 id="modalTitle">⚙️ Atur Daftar &amp; Peluang</h2>
+
+    <section class="modal-section">
+      <h3>Daftar Kelompok — Roda 1</h3>
+      <div id="groupRows" class="list-editor"></div>
+      <button id="addGroupBtn" class="add-btn">+ Tambah Kelompok</button>
+    </section>
+
+    <section class="modal-section">
+      <h3>Daftar Jatah — Roda 2</h3>
+      <div id="jatahRows" class="list-editor"></div>
+      <button id="addJatahBtn" class="add-btn">+ Tambah Jatah</button>
+    </section>
+
+    <section class="modal-section">
+      <h3>Peluang per Kelompok</h3>
+      <p class="modal-note">Isi angka peluang (0 = tidak boleh terpilih). Persentase dihitung otomatis per baris.</p>
+      <div class="matrix-wrap">
+        <table id="matrixTable" class="matrix"></table>
+      </div>
+    </section>
+
+    <div class="modal-actions">
+      <button id="factoryResetBtn" class="factory-btn">KEMBALIKAN BAWAAN</button>
+      <span class="modal-actions-right">
+        <button id="closeSettingsBtn" class="close-btn">TUTUP</button>
+        <button id="saveSettingsBtn" class="save-btn">SIMPAN &amp; TERAPKAN</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
